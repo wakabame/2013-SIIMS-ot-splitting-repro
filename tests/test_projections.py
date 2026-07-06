@@ -1,11 +1,11 @@
-"""発散ゼロ射影 div_proj のテスト(実装ステップ 5-4)。"""
+"""射影作用素 div_proj / interp_proj のテスト(実装ステップ 5-4, 5-5)。"""
 
 import numpy as np
 import pytest
 
 from ot_splitting.grid import Staggered
-from ot_splitting.operators import div
-from ot_splitting.projections import div_proj
+from ot_splitting.operators import div, interp
+from ot_splitting.projections import div_proj, interp_proj
 
 DIMS = [(8, 10), (6, 8, 10), (12, 12, 24)]
 
@@ -124,3 +124,93 @@ class TestDivProj:
         np.testing.assert_array_equal(v.M[2][:, :, 0], f0)
         np.testing.assert_array_equal(v.M[2][:, :, -1], f1)
         assert np.abs(div(v)).max() < 1e-9
+
+
+class TestInterpProj:
+    @pytest.mark.parametrize("dim", DIMS)
+    def test_constraint_satisfied(self, dim):
+        # 射影後は v = interp(u) が厳密に成り立つ
+        rng = np.random.default_rng(10)
+        u0 = random_staggered(dim, seed=10)
+        v0 = rng.standard_normal(dim + (len(dim),))
+        u, v = interp_proj(u0, v0)
+        np.testing.assert_allclose(interp(u), v, atol=1e-10)
+
+    @pytest.mark.parametrize("dim", DIMS)
+    def test_boundary_slices_preserved(self, dim):
+        # 各成分の軸方向両端(f0, f1 を含む)は元の値のまま固定される
+        rng = np.random.default_rng(11)
+        u0 = random_staggered(dim, seed=11)
+        v0 = rng.standard_normal(dim + (len(dim),))
+        u, _ = interp_proj(u0, v0)
+        for k in range(len(dim)):
+            first = [slice(None)] * len(dim)
+            last = [slice(None)] * len(dim)
+            first[k] = 0
+            last[k] = -1
+            np.testing.assert_allclose(
+                u.M[k][tuple(first)], u0.M[k][tuple(first)], atol=1e-10
+            )
+            np.testing.assert_allclose(
+                u.M[k][tuple(last)], u0.M[k][tuple(last)], atol=1e-10
+            )
+
+    @pytest.mark.parametrize("dim", DIMS)
+    def test_idempotent(self, dim):
+        rng = np.random.default_rng(12)
+        u0 = random_staggered(dim, seed=12)
+        v0 = rng.standard_normal(dim + (len(dim),))
+        u1, v1 = interp_proj(u0, v0)
+        u2, v2 = interp_proj(u1, v1)
+        for k in range(len(dim)):
+            np.testing.assert_allclose(u2.M[k], u1.M[k], atol=1e-9)
+        np.testing.assert_allclose(v2, v1, atol=1e-9)
+
+    @pytest.mark.parametrize("dim", DIMS)
+    def test_feasible_pair_unchanged(self, dim):
+        # 既に制約を満たすペア (u, interp(u)) は不動点
+        u0 = random_staggered(dim, seed=13)
+        v0 = interp(u0)
+        u, v = interp_proj(u0, v0)
+        for k in range(len(dim)):
+            np.testing.assert_allclose(u.M[k], u0.M[k], atol=1e-9)
+        np.testing.assert_allclose(v, v0, atol=1e-9)
+
+    @pytest.mark.parametrize("dim", DIMS)
+    def test_orthogonality(self, dim):
+        # 残差 (u0,v0)-(u,v) は、制約集合の方向ベクトル空間
+        # {(w, interp(w)) : w の両端スライス = 0} に直交する
+        rng = np.random.default_rng(14)
+        u0 = random_staggered(dim, seed=14)
+        v0 = rng.standard_normal(dim + (len(dim),))
+        u, v = interp_proj(u0, v0)
+
+        w = zero_boundary(random_staggered(dim, seed=15))
+        wv = interp(w)
+        inner = dot(u0 - u, w) + float(np.sum((v0 - v) * wv))
+        scale = (u0.norm() + np.linalg.norm(v0)) * (
+            w.norm() + np.linalg.norm(wv)
+        )
+        assert abs(inner) < 1e-9 * scale
+
+    def test_output_shapes(self):
+        dim = (5, 6, 7)
+        u0 = random_staggered(dim, seed=16)
+        v0 = np.zeros(dim + (3,))
+        u, v = interp_proj(u0, v0)
+        assert u.dim == dim
+        for k in range(3):
+            assert u.M[k].shape == u0.component_shape(k)
+        assert v.shape == dim + (3,)
+
+    def test_inputs_not_mutated(self):
+        dim = (5, 6)
+        rng = np.random.default_rng(17)
+        u0 = random_staggered(dim, seed=17)
+        v0 = rng.standard_normal(dim + (2,))
+        u0_bak = u0.copy()
+        v0_bak = v0.copy()
+        interp_proj(u0, v0)
+        for k in range(2):
+            np.testing.assert_array_equal(u0.M[k], u0_bak.M[k])
+        np.testing.assert_array_equal(v0, v0_bak)
