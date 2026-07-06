@@ -1,0 +1,27 @@
+[project]
+name = "ot-splitting"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "wakabame", email = "yuki@deltaex.co.jp" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "matplotlib>=3.11.0",
+    "numpy>=2.5.1",
+    "pillow>=12.3.0",
+    "scipy>=1.18.0",
+]
+
+[project.scripts]
+ot-splitting = "ot_splitting:main"
+
+[build-system]
+requires = ["uv_build>=0.11.19,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
