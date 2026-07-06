@@ -75,5 +75,7 @@ def prox_j(
     if obstacle is not None:
         f = np.where(obstacle > 0, epsilon, f)
 
-    m = m0 / (1.0 + 2.0 * gamma / f)[..., None]
+    # m0 / (1 + 2γ/f) と等価だが f = 0(obstacle ケースの ε = 0)でも
+    # ゼロ除算にならない形
+    m = m0 * (f / (f + 2.0 * gamma))[..., None]
     return np.concatenate([m, f[..., None]], axis=-1)
