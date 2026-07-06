@@ -33,15 +33,17 @@ uv add --dev pytest
 
 実行はすべて `uv run` 経由(例: `uv run python -m ot_splitting.run_obstacle`)。
 
-## 3. プロジェクト構成(案)
+## 3. プロジェクト構成
+
+リポジトリ直下に uv プロジェクトを置く(ステップ 5-1 で初期化済み)。
 
 ```
-python/
+.                        # リポジトリルート = uv プロジェクトルート
 ├── pyproject.toml
 ├── src/ot_splitting/
 │   ├── __init__.py
 │   ├── grid.py          # Staggered クラス(格子データ + 加減算・スカラー倍)
-│   ├── operators.py     # div, interp, interp_adj
+│   ├── operators.py     # div, interp
 │   ├── poisson.py       # DCT による Neumann 境界 Poisson ソルバ
 │   ├── projections.py   # div_proj(発散ゼロ射影)、interp_proj(補間整合射影)
 │   ├── prox.py          # proxJ(alpha=1 の 3 次方程式の閉形式解)
