@@ -78,8 +78,9 @@ uv add --dev pytest
 ## 5. 実装ステップ
 
 依存の少ない順に下から積み上げ、各ステップで単体テストを書いてから次に進む。
+(全ステップ実装済み・2026-07-06 完了)
 
-1. **プロジェクト初期化** — `uv init` で `python/` 配下に雛形を作り、依存を追加。
+1. **プロジェクト初期化** — `uv init` でリポジトリルートに雛形を作り、依存を追加。
 2. **Staggered 格子と基本作用素**(`grid.py`, `operators.py`) — `Staggered` クラス、`div`, `interp` を実装。
    - テスト: 定数場で `div = 0`、線形場で厳密値と一致すること。
 3. **Poisson ソルバ**(`poisson.py`) — DCT ベースの Neumann Poisson。
