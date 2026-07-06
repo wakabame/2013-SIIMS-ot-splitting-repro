@@ -51,12 +51,17 @@ def _interp_matrix(n: int) -> np.ndarray:
 
 
 @lru_cache(maxsize=None)
-def _projection_operator(n: int) -> tuple[np.ndarray, np.ndarray]:
-    """制約 ``{S u = v, u_0 = a, u_n = b}`` への射影行列 (pA, B) を返す。
+def _projection_operator(
+    n: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """制約 ``{S u = v, u_0 = a, u_n = b}`` への射影行列を返す。
 
     MATLAB 版の persistent キャッシュに相当(格子サイズ n をキーに
-    lru_cache で保持)。x = [u; v] (長さ 2n+1)に対し
-    射影は ``B x + pA g`` (g = [0…0; a; b])。
+    lru_cache で保持)。x = [u; v] (長さ 2n+1)に対し射影は
+    ``B x + pA g`` (g = [0…0; a; b])。行列積を効率よく適用できる
+    よう、あらかじめブロックに分割した連続配列
+    ``(Bu = B[:, :n+1], Bv = B[:, n+1:], pA_bc = pA[:, n:])``
+    を返す(g の先頭 n 行はゼロなので pA は末尾 2 列のみ使う)。
     """
     S = _interp_matrix(n)
     A = np.zeros((n + 2, 2 * n + 1))
@@ -66,7 +71,11 @@ def _projection_operator(n: int) -> tuple[np.ndarray, np.ndarray]:
     A[n + 1, n] = 1.0
     pA = np.linalg.pinv(A)
     B = np.eye(2 * n + 1) - pA @ A
-    return pA, B
+    return (
+        np.ascontiguousarray(B[:, : n + 1]),
+        np.ascontiguousarray(B[:, n + 1 :]),
+        np.ascontiguousarray(pA[:, n:]),
+    )
 
 
 def interp_proj(
@@ -85,20 +94,21 @@ def interp_proj(
     u = u0.copy()
     v = np.array(v0, dtype=float)
     for k, n in enumerate(dim):
-        pA, B = _projection_operator(n)
+        Bu, Bv, pA_bc = _projection_operator(n)
         # 軸 k を先頭に移して (格子点数, 残り) の 2 次元に畳む
         uc = np.moveaxis(u0.M[k], k, 0)
         vc = np.moveaxis(v0[..., k], k, 0)
         moved_u_shape = uc.shape
         moved_v_shape = vc.shape
-        uc = uc.reshape(n + 1, -1)
-        vc = vc.reshape(n, -1)
+        uc = np.ascontiguousarray(uc).reshape(n + 1, -1)
+        vc = np.ascontiguousarray(vc).reshape(n, -1)
 
-        x = np.concatenate([uc, vc], axis=0)
-        g = np.concatenate(
-            [np.zeros((n, uc.shape[1])), uc[:1], uc[-1:]], axis=0
-        )
-        y = B @ x + pA @ g
+        # y = B @ [u; v] + pA @ g。x の連結を避けて B をブロック別に
+        # 適用する。g は境界 2 行(u の両端値)以外ゼロなので、
+        # pA @ g は pA の末尾 2 列との積に縮約できる
+        y = Bu @ uc
+        y += Bv @ vc
+        y += pA_bc @ np.stack([uc[0], uc[-1]])
 
         u.M[k] = np.moveaxis(
             y[: n + 1].reshape(moved_u_shape), 0, k

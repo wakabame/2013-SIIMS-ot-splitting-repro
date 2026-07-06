@@ -19,30 +19,50 @@ def solve_cubic_largest_root(
     非正なら 3 実根のうち最大のもの ``2r·cos(θ/3) − a/3`` を返す。
     prox_J の 3 次方程式(c ≤ 0)では最大実根が唯一の非負根になる。
     """
-    a = np.asarray(a, dtype=float)
-    b = np.asarray(b, dtype=float)
-    c = np.asarray(c, dtype=float)
+    out_shape = np.broadcast_shapes(
+        np.shape(a), np.shape(b), np.shape(c)
+    )
+    a = np.broadcast_to(np.asarray(a, dtype=float), out_shape).reshape(-1)
+    b = np.broadcast_to(np.asarray(b, dtype=float), out_shape).reshape(-1)
+    c = np.broadcast_to(np.asarray(c, dtype=float), out_shape).reshape(-1)
 
     # 標準形 t³ + p t + q = 0 (x = t - a/3)
-    p = b - a**2 / 3.0
-    q = 2.0 * a**3 / 27.0 - a * b / 3.0 + c
-    delta = (q / 2.0) ** 2 + (p / 3.0) ** 3
+    # 注意: 配列の整数べき(**2, **3)は値域によって libm pow の
+    # 低速経路に落ちる(実測で 50 倍超の差)ため、明示的な乗算で書く
+    a2 = a * a
+    p = b - a2 / 3.0
+    q = 2.0 * (a2 * a) / 27.0 - a * b / 3.0 + c
+    half_q = q / 2.0
+    third_p = p / 3.0
+    delta = half_q * half_q + third_p * third_p * third_p
 
-    # delta > 0: 実根 1 つ(Cardano)
+    # delta > 0: 実根 1 つ(Cardano)。prox_J の係数では実運用上
+    # ほぼ全点がこちらに落ちるため、まず全点を Cardano で計算する。
+    # 2 つの立方根 u1, u2 は u1·u2 = -p/3 を満たすので、片方 u から
+    # t = u - p/(3u) が得られ、高コストな cbrt を 1 回に減らせる。
+    # 相殺誤差を避けるため -q/2 と同符号側(絶対値が大きい方)の
+    # 被開立数を選ぶ。u = 0 となるのは q = 0 かつ delta = 0 のとき
+    # だけで、その点は下の delta <= 0 分岐が必ず上書きする
     sqrt_delta = np.sqrt(np.maximum(delta, 0.0))
-    t_single = np.cbrt(-q / 2.0 + sqrt_delta) + np.cbrt(
-        -q / 2.0 - sqrt_delta
-    )
+    u_root = np.cbrt(-half_q + np.copysign(sqrt_delta, -q))
+    safe_u = np.where(u_root != 0.0, u_root, 1.0)
+    t = u_root - third_p / safe_u
 
-    # delta <= 0: 実根 3 つ(三角関数解)。最大根は 2r·cos(θ/3)
-    r = np.sqrt(np.maximum(-p / 3.0, 0.0))
-    r3 = r**3
-    safe_r3 = np.where(r3 > 0.0, r3, 1.0)
-    cos_theta = np.clip(np.where(r3 > 0.0, -q / 2.0 / safe_r3, 1.0), -1.0, 1.0)
-    t_triple = 2.0 * r * np.cos(np.arccos(cos_theta) / 3.0)
+    # delta <= 0: 実根 3 つ(三角関数解)。最大根は 2r·cos(θ/3)。
+    # 該当点がある場合のみ、その部分集合に対して計算する
+    triple = delta <= 0.0
+    if np.any(triple):
+        pm = p[triple]
+        qm = q[triple]
+        r = np.sqrt(np.maximum(-pm / 3.0, 0.0))
+        r3 = r * r * r
+        safe_r3 = np.where(r3 > 0.0, r3, 1.0)
+        cos_theta = np.clip(
+            np.where(r3 > 0.0, -qm / 2.0 / safe_r3, 1.0), -1.0, 1.0
+        )
+        t[triple] = 2.0 * r * np.cos(np.arccos(cos_theta) / 3.0)
 
-    t = np.where(delta > 0.0, t_single, t_triple)
-    return t - a / 3.0
+    return (t - a / 3.0).reshape(out_shape)
 
 
 def prox_j(

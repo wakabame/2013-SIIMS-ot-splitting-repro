@@ -26,6 +26,10 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--gamma", type=float, default=1.0 / 230.0)
     parser.add_argument("--mu", type=float, default=1.98)
     parser.add_argument(
+        "--diag-every", type=int, default=25,
+        help="収束診断(J, |div| の記録)の間隔。1 で毎反復(低速)",
+    )
+    parser.add_argument(
         "--maze", type=Path, default=DEFAULT_MAZE_PATH,
         help="迷路画像(赤チャネル 0 の画素を壁とみなす)",
     )
@@ -42,7 +46,8 @@ def main(argv: list[str] | None = None) -> None:
     res = solve_ppxa(
         prob.f0, prob.f1, prob.Q,
         gamma=args.gamma, mu=args.mu, niter=args.niter,
-        epsilon=prob.epsilon, obstacle=prob.obstacle, verbose=True,
+        epsilon=prob.epsilon, obstacle=prob.obstacle,
+        diag_every=args.diag_every, verbose=True,
     )
     elapsed = time.perf_counter() - t0
     print(

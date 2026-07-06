@@ -8,9 +8,31 @@ MATLAB 版 ``poisson2d_Neumann.m`` / ``poisson3d_Neumann.m`` の移植
 from __future__ import annotations
 
 from collections.abc import Sequence
+from functools import lru_cache
 
 import numpy as np
 from scipy.fft import dctn, idctn
+
+
+@lru_cache(maxsize=None)
+def _laplacian_denominator(
+    shape: tuple[int, ...], lengths: tuple[float, ...]
+) -> np.ndarray:
+    """DCT-II 基底での Laplacian 固有値の総和(ゼロは 1 に置換)。
+
+    ソルバの反復中は同じ形状で繰り返し呼ばれるためキャッシュする。
+    戻り値は共有されるので書き込み禁止にしてある。
+    """
+    denom = np.zeros(shape)
+    for axis, (n, length) in enumerate(zip(shape, lengths)):
+        h = length / n
+        eig = (2.0 * np.cos(np.pi * np.arange(n) / n) - 2.0) / h**2
+        eig_shape = [1] * len(shape)
+        eig_shape[axis] = n
+        denom = denom + eig.reshape(eig_shape)
+    denom[denom == 0] = 1.0
+    denom.setflags(write=False)
+    return denom
 
 
 def poisson_neumann(
@@ -30,15 +52,9 @@ def poisson_neumann(
     if lengths is None:
         lengths = (1.0,) * f.ndim
 
-    denom = np.zeros(f.shape)
-    for axis, (n, length) in enumerate(zip(f.shape, lengths)):
-        h = length / n
-        eig = (2.0 * np.cos(np.pi * np.arange(n) / n) - 2.0) / h**2
-        shape = [1] * f.ndim
-        shape[axis] = n
-        denom = denom + eig.reshape(shape)
-    denom[denom == 0] = 1.0
-
-    fhat = dctn(f, type=2, norm="ortho")
+    denom = _laplacian_denominator(
+        f.shape, tuple(float(x) for x in lengths)
+    )
+    fhat = dctn(f, type=2, norm="ortho", workers=-1)
     uhat = -fhat / denom
-    return idctn(uhat, type=2, norm="ortho")
+    return idctn(uhat, type=2, norm="ortho", workers=-1)
