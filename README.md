@@ -141,4 +141,9 @@ test = 'obstacle';  niter = 2000;
 
 ## ライセンス・著作権
 
-Copyright (c) 2013 Gabriel Peyré, Nicolas Papadakis, Édouard Oudet
+このリポジトリは由来の異なる 2 種類の成果物を含みます。
+
+- **MATLAB ソースコード(`code/`)・論文原稿(`paper/`)・図(`img/`)** — 原著者による既存の成果物です。
+  Copyright (c) 2013 Nicolas Papadakis, Gabriel Peyré, Édouard Oudet
+- **Python 移植(`src/`, `tests/` および関連プロジェクトファイル)** — wakabame による再現実装です。
+  Copyright (c) 2026 wakabame([MIT License](LICENSE))
