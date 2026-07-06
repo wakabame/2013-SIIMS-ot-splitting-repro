@@ -1,7 +1,7 @@
 [project]
 name = "ot-splitting"
 version = "0.1.0"
-description = "Add your description here"
+description = "Python reproduction of 'Optimal Transport with Proximal Splitting' (Papadakis, Peyré, Oudet, SIIMS 2014)"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
