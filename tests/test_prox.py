@@ -163,6 +163,23 @@ class TestProxJ:
         V = prox_j(V0, self.GAMMA, self.EPS)
         assert V[..., 2].min() >= self.EPS
 
+    def test_numba_kernel_matches_numpy_reference(self):
+        # 高速化プラン 2-1:融合カーネルと numpy 実装の数値同等性
+        # (fastmath 使用のため rtol=1e-8 を許容。§3 の検証方針)
+        from ot_splitting.prox import _prox_j_numpy
+
+        V0 = self.make_input(seed=10)
+        V0[..., 2] -= 0.2  # 負の密度も混ぜる
+        obstacle = np.zeros(V0.shape[:-1])
+        obstacle[1:3, 2:5, :] = 1.0
+        for obs in (None, obstacle):
+            np.testing.assert_allclose(
+                prox_j(V0, self.GAMMA, self.EPS, obstacle=obs),
+                _prox_j_numpy(V0, self.GAMMA, self.EPS, obstacle=obs),
+                rtol=1e-8,
+                atol=1e-12,
+            )
+
     def test_production_size_performance(self):
         # 本番サイズ (50,50,100) が 1 回あたり現実的な時間で動くこと
         import time

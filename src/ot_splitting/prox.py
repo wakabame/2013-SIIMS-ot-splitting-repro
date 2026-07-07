@@ -8,6 +8,7 @@ MATLAB 版 ``proxJ.m`` の alpha = 1(L2-Wasserstein)分岐の移植。
 from __future__ import annotations
 
 import numpy as np
+from numba import njit, prange
 
 
 def solve_cubic_largest_root(
@@ -65,6 +66,58 @@ def solve_cubic_largest_root(
     return (t - a / 3.0).reshape(out_shape)
 
 
+@njit(cache=True, fastmath=True, parallel=True)
+def _prox_j_kernel(V0, out, gamma, epsilon, obstacle):
+    """prox_J を 1 パスで計算する融合カーネル(一時配列なし)。
+
+    V0 / out は (npts, d) の 2 次元ビュー、obstacle は長さ npts
+    (なければ長さ 0)。3 次方程式の分岐はスカラー if で片側だけ
+    実行される。数式は numpy 版(_prox_j_numpy)と同一。
+    """
+    npts = V0.shape[0]
+    nm = V0.shape[1] - 1
+    has_obs = obstacle.size == npts
+    g2 = gamma * gamma
+    for i in prange(npts):
+        if has_obs and obstacle[i] > 0.0:
+            f = epsilon
+        else:
+            f0 = V0[i, nm]
+            msq = 0.0
+            for j in range(nm):
+                msq += V0[i, j] * V0[i, j]
+            a = 4.0 * gamma - f0
+            b = 4.0 * g2 - 4.0 * gamma * f0
+            c = -gamma * msq - 4.0 * g2 * f0
+
+            # 標準形 t³ + p t + q = 0 (f = t - a/3) の最大実根
+            a2 = a * a
+            p = b - a2 / 3.0
+            q = 2.0 * (a2 * a) / 27.0 - a * b / 3.0 + c
+            half_q = 0.5 * q
+            third_p = p / 3.0
+            delta = half_q * half_q + third_p * third_p * third_p
+            if delta > 0.0:
+                # Cardano:-q/2 と同符号側の被開立数を選び相殺誤差を回避
+                u = np.cbrt(-half_q + np.copysign(np.sqrt(delta), -q))
+                t = u - third_p / u
+            else:
+                # 3 実根(三角関数解)。最大根は 2r·cos(θ/3)
+                r = np.sqrt(max(-third_p, 0.0))
+                r3 = r * r * r
+                if r3 > 0.0:
+                    cos_theta = min(max(-half_q / r3, -1.0), 1.0)
+                else:
+                    cos_theta = 1.0
+                t = 2.0 * r * np.cos(np.arccos(cos_theta) / 3.0)
+            f = max(t - a / 3.0, epsilon)
+
+        scale = f / (f + 2.0 * gamma)
+        for j in range(nm):
+            out[i, j] = V0[i, j] * scale
+        out[i, nm] = f
+
+
 def prox_j(
     V0: np.ndarray,
     gamma: float,
@@ -81,6 +134,26 @@ def prox_j(
     の正根、運動量は ``m = m0 / (1 + 2γ/f)``。
     obstacle が正の点では f = ε に固定する(質量を通さない)。
     """
+    V0 = np.ascontiguousarray(V0, dtype=float)
+    flat = V0.reshape(-1, V0.shape[-1])
+    if obstacle is None:
+        obs = np.empty(0)
+    else:
+        obs = np.ascontiguousarray(
+            np.broadcast_to(np.asarray(obstacle, dtype=float), V0.shape[:-1])
+        ).reshape(-1)
+    out = np.empty_like(flat)
+    _prox_j_kernel(flat, out, float(gamma), float(epsilon), obs)
+    return out.reshape(V0.shape)
+
+
+def _prox_j_numpy(
+    V0: np.ndarray,
+    gamma: float,
+    epsilon: float,
+    obstacle: np.ndarray | None = None,
+) -> np.ndarray:
+    """prox_j の numpy 参照実装(融合カーネルとの数値同等性テスト用)。"""
     V0 = np.asarray(V0, dtype=float)
     m0 = V0[..., :-1]
     f0 = V0[..., -1]
